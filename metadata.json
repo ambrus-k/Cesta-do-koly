@@ -1,0 +1,6 @@
+{
+  "name": "Dušníky → Ambis Plánovač dojíždění",
+  "description": "Kalkulačka a časový plánovač cesty z Trhových Dušník přes Příbram (PID 395/393) a metro B na AMBIS vysokou školu v Praze s rezervami a dopravní špičkou.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
