@@ -35,7 +35,9 @@ import {
   Monitor,
   Download,
   Share2,
-  X
+  X,
+  Plus,
+  Minus
 } from 'lucide-react';
 
 interface ParkingOption {
@@ -194,9 +196,12 @@ export default function App() {
   const [selectedParkingId, setSelectedParkingId] = useState<string>('aquapark');
   const [trafficMode, setTrafficMode] = useState<string>('normal');
   
-  const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [showFaq, setShowFaq] = useState<boolean>(false);
-  const [showInstallGuide, setShowInstallGuide] = useState<boolean>(false);
+  // Vyskakovací modální okna (žádné otevírání dole na stránce!)
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [showFaqModal, setShowFaqModal] = useState<boolean>(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
+  
   const [copiedSchedule, setCopiedSchedule] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
@@ -208,7 +213,7 @@ export default function App() {
   const [walkFromMetroAmbis, setWalkFromMetroAmbis] = useState<number>(8);
   const [darkMode, setDarkMode] = useState<boolean>(false);
 
-  // Detekce PWA a uložení do paměti
+  // Načtení nastavení z paměti a inicializace
   useEffect(() => {
     try {
       const savedParking = localStorage.getItem('ambis_parking');
@@ -226,7 +231,6 @@ export default function App() {
         setDarkMode(true);
       }
 
-      // Detekce, zda běží v samostatném okně (standalone)
       if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as unknown as { standalone?: boolean }).standalone) {
         setIsInstalled(true);
       }
@@ -243,6 +247,20 @@ export default function App() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
     };
+  }, []);
+
+  // Zavření modálních oken na klávesu Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowSettingsModal(false);
+        setShowFaqModal(false);
+        setShowInstallModal(false);
+        setShowShareModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -353,7 +371,7 @@ export default function App() {
     walkFromMetroAmbis
   ]);
 
-  // 1. Google Mapy: Sloučená celá trasa (Dušníky ➔ Parkoviště Příbram ➔ AMBIS Praha)
+  // 1. Google Mapy: Sloučená celá trasa
   const gmapsCombinedRouteUrl = useMemo(() => {
     const ambisAddress = 'AMBIS vysoká škola, Lindnerova 575/1, Libeň, Praha';
     const dusniky = 'Trhové Dušníky';
@@ -418,32 +436,50 @@ export default function App() {
     }
   }, [direction, selectedParking, forwardSchedule.departBus, returnSchedule.reachPalmovka]);
 
-  const handleCopyPlan = () => {
-    let text = '';
+  // Formátovaný text plánu
+  const planSummaryText = useMemo(() => {
     if (direction === 'to_ambis') {
-      text = `🚗 TRHOVÉ DUŠNÍKY → AMBIS PRAHA (${targetTime})
+      return `🚗 TRHOVÉ DUŠNÍKY → AMBIS PRAHA (${targetTime})
 ⏰ Odjezd z domova autem: ${forwardSchedule.departDusniky}
-🅿️ Parkování Příbram: ${selectedParking.name} (${forwardSchedule.arriveParking})
+🅿️ Parkoviště Příbram: ${selectedParking.name} (příjezd: ${forwardSchedule.arriveParking})
 🚌 Zastávka na Prahu: ${selectedParking.stopName} (${selectedParking.busLines})
 ⏰ Odjezd busu: ${forwardSchedule.departBus}
 🚇 Metro B Smíchov: ${forwardSchedule.arriveSmichov}
 🚶‍♂️ Příchod na Ambis: ${forwardSchedule.arriveAmbis} (výuka od ${targetTime})
-🗺️ Trasa v Google Mapách: ${gmapsCombinedRouteUrl}
-Celková doba cesty: ${Math.floor(forwardSchedule.totalTripMinutes / 60)}h ${forwardSchedule.totalTripMinutes % 60}m`;
+🗺️ Odkaz na mapu: ${gmapsCombinedRouteUrl}
+Celková doba: ${Math.floor(forwardSchedule.totalTripMinutes / 60)}h ${forwardSchedule.totalTripMinutes % 60}m`;
     } else {
-      text = `🏢 AMBIS PRAHA → TRHOVÉ DUŠNÍKY (konec ${targetTime})
+      return `🏢 AMBIS PRAHA → TRHOVÉ DUŠNÍKY (konec ${targetTime})
 🚶‍♂️ Konec výuky: ${targetTime}
 🚇 Metro B Palmovka: ${returnSchedule.reachPalmovka}
 🚌 Bus PID ze Smíchova: ${returnSchedule.departSmichovBus}
 🅿️ Výstup v Příbrami: ${selectedParking.stopName} v ${returnSchedule.reachPribramStop}
 🏡 Příjezd domů (Dušníky): ${returnSchedule.reachHome}
-🗺️ Trasa v Google Mapách: ${gmapsCombinedRouteUrl}
-Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h ${returnSchedule.totalReturnTripMin % 60}m`;
+🗺️ Odkaz na mapu: ${gmapsCombinedRouteUrl}
+Celková doba: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h ${returnSchedule.totalReturnTripMin % 60}m`;
     }
+  }, [direction, targetTime, forwardSchedule, returnSchedule, selectedParking, gmapsCombinedRouteUrl]);
 
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(planSummaryText);
     setCopiedSchedule(true);
     setTimeout(() => setCopiedSchedule(false), 2200);
+  };
+
+  const handleShareMobile = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Dušníky → Ambis Plán cesty',
+          text: planSummaryText,
+          url: gmapsCombinedRouteUrl
+        });
+      } catch {
+        // Uživatel stornoval dialog sdílení
+      }
+    } else {
+      copyToClipboard();
+    }
   };
 
   const handleInstallClick = async () => {
@@ -455,81 +491,75 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
       }
       setDeferredPrompt(null);
     } else {
-      setShowInstallGuide(true);
+      setShowInstallModal(true);
     }
   };
 
   return (
     <div className={darkMode ? 'dark bg-slate-950 text-slate-100 min-h-screen py-3 sm:py-8 px-2 sm:px-4 pb-[calc(2rem+env(safe-area-inset-bottom))]' : 'bg-slate-100 text-slate-800 min-h-screen py-3 sm:py-8 px-2 sm:px-4 pb-[calc(2rem+env(safe-area-inset-bottom))]'}>
+      
       {/* JEDINÉ SJEDNOCENÉ OKNO APLIKACE */}
       <div className="max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden transition-colors">
         
-        {/* 1. HLAVIČKA OKNA */}
-        <div className="border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-7 py-3.5 bg-slate-50/70 dark:bg-slate-900/90 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center space-x-3">
+        {/* 1. HLAVIČKA OKNA S TLAČÍTKY OTEVÍRAJÍCÍMI VYSKAKOVACÍ OKNA */}
+        <div className="border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-7 py-3 bg-slate-50/70 dark:bg-slate-900/90 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center space-x-2.5">
             <div className="bg-gradient-to-tr from-sky-600 to-indigo-600 text-white p-2 rounded-xl shadow-sm flex-shrink-0">
               <Compass className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
+              <h1 className="text-sm sm:text-base font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
                 Dušníky → Ambis Plánovač
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Příbram (P+R) • PID 395/393 • Metro B • AMBIS Libeň
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-1.5 sm:space-x-2">
+          {/* Akční tlačítka v záhlaví – KAŽDÉ OTEVÍRÁ VYSKAKOVACÍ OKNO */}
+          <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
             {!isInstalled && (
               <button
                 onClick={handleInstallClick}
-                className="px-2.5 py-1.5 rounded-lg border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 hover:bg-sky-100 text-xs font-semibold transition flex items-center gap-1.5"
-                title="Nainstalovat jako webovou aplikaci na mobil, tablet nebo PC"
+                className="px-2.5 py-1.5 rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900 text-xs font-semibold transition flex items-center gap-1.5 active:scale-95"
+                title="Otevřít průvodce instalací na plochu"
               >
                 <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                <span className="hidden sm:inline">Instalovat aplikaci</span>
+                <span className="text-xs">Instalovat</span>
               </button>
             )}
 
             <button
-              onClick={() => setShowFaq(!showFaq)}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition flex items-center gap-1.5 ${
-                showFaq
-                  ? 'bg-amber-100/70 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
-                  : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}
-              title="Informace k jízdence a PID"
+              onClick={() => setShowFaqModal(true)}
+              className="px-2.5 py-1.5 rounded-xl border border-amber-300/80 dark:border-amber-800/80 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-200 text-xs font-semibold transition flex items-center gap-1.5 active:scale-95"
+              title="Otevřít vyskakovací okno s informacemi o jízdenkách a zastávkách"
             >
-              <Ticket className="w-3.5 h-3.5 text-amber-600" />
-              <span className="hidden sm:inline">Jízdenky PID</span>
+              <Ticket className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span className="text-xs">Jízdenky</span>
             </button>
 
             <button
-              onClick={() => setShowSettings(!showSettings)}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition flex items-center gap-1.5 ${
-                showSettings 
-                  ? 'bg-sky-50 dark:bg-sky-950/70 border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300' 
-                  : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}
-              title="Přizpůsobení rezerv a časů"
+              onClick={() => setShowSettingsModal(true)}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 active:scale-95"
+              title="Otevřít vyskakovací okno pro nastavení časových rezerv"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-sky-600" />
-              <span className="hidden sm:inline">Rezervy</span>
+              <SlidersHorizontal className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+              <span className="text-xs">Rezervy</span>
             </button>
 
             <button
-              onClick={handleCopyPlan}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 transition flex items-center gap-1.5"
-              title="Kopírovat plán cesty"
+              onClick={() => setShowShareModal(true)}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 active:scale-95"
+              title="Otevřít vyskakovací okno pro kopírování a sdílení plánu"
             >
-              {copiedSchedule ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{copiedSchedule ? 'Zkopírováno' : 'Kopírovat'}</span>
+              <Copy className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span className="text-xs">Kopírovat</span>
             </button>
 
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+              className="p-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition active:scale-95"
               aria-label="Přepnout motiv"
               title={darkMode ? 'Světlý motiv' : 'Tmavý motiv'}
             >
@@ -543,31 +573,31 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
           <div className="inline-flex p-1 bg-slate-200/70 dark:bg-slate-800 rounded-xl text-xs font-semibold">
             <button
               onClick={() => setDirection('to_ambis')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
                 direction === 'to_ambis'
                   ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm font-bold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <ArrowRight className="w-3.5 h-3.5" />
-              Cesta tam: Dušníky → Ambis
+              <span>Cesta do školy</span>
             </button>
             <button
               onClick={() => setDirection('to_home')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
                 direction === 'to_home'
                   ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm font-bold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
-              Cesta zpět: Ambis → Dušníky
+              <span>Cesta domů</span>
             </button>
           </div>
 
           <div className="text-xs text-slate-500 dark:text-slate-400 hidden sm:flex items-center gap-1.5">
             <MapPin className="w-3.5 h-3.5 text-rose-500" />
-            <span>Cílová zastávka: <strong>Praha, U Kříže</strong> (3 min od AMBIS)</span>
+            <span>Cíl v Praze: <strong>Praha, U Kříže / AMBIS Libeň</strong></span>
           </div>
         </div>
 
@@ -653,18 +683,17 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
           </div>
         </div>
 
-        {/* 4. GOOGLE MAPY & IDOS – OVĚŘENÁ SPOJENÍ A PŘESNÉ ZASTÁVKY */}
+        {/* 4. GOOGLE MAPY & IDOS – RYCHLÁ TLAČÍTKA TRAS */}
         <div className="bg-gradient-to-r from-sky-50 via-indigo-50 to-slate-50 dark:from-slate-800/80 dark:via-slate-800/60 dark:to-slate-800/80 border-b border-slate-200/80 dark:border-slate-800 p-4 sm:p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
             
-            {/* Popis s informací o zařízeních */}
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <Map className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
                   {direction === 'to_ambis' 
-                    ? `Trasa: Dušníky → ${selectedParking.name.split('(')[0].trim()} → ${selectedParking.stopName} → AMBIS Libeň` 
-                    : `Trasa: AMBIS Libeň → Smíchov → ${selectedParking.stopName} → Dušníky`}
+                    ? `Navigace: Dušníky → ${selectedParking.stopName} → AMBIS` 
+                    : `Navigace: AMBIS → ${selectedParking.stopName} → Dušníky`}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
@@ -673,7 +702,7 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
                 </span>
                 <span>•</span>
                 <span className="inline-flex items-center gap-1">
-                  <Smartphone className="w-3 h-3 text-sky-600" /> V mobilu/tabletu aplikace Google Mapy
+                  <Smartphone className="w-3 h-3 text-sky-600" /> Mobil/tablet: aplikace Mapy
                 </span>
               </div>
             </div>
@@ -708,7 +737,7 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
           </div>
 
           {/* Doplňková tlačítka: Ověřené IDOS vyhledávání + Dílčí úseky Google Map */}
-          <div className="mt-3.5 pt-3.5 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center gap-2 text-xs">
+          <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center gap-2 text-xs">
             
             {/* IDOS tlačítko 1: Přímo ke škole AMBIS (zastávka U Kříže) */}
             <a
@@ -748,20 +777,6 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
               <span>Jen auto do Příbrami</span>
               <ExternalLink className="w-3 h-3 text-slate-400" />
             </a>
-
-            {/* Google Mapy: Jen MHD */}
-            <a
-              href={gmapsTransitSegmentUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium transition"
-              title="Navigace veřejnou dopravou z ověřené zastávky na AMBIS"
-            >
-              <Bus className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Jen MHD ze zastávky</span>
-              <ExternalLink className="w-3 h-3 text-slate-400" />
-            </a>
-
           </div>
         </div>
 
@@ -769,7 +784,7 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
         <div className="border-b border-slate-200/80 dark:border-slate-800 p-5 sm:p-7 bg-white dark:bg-slate-900">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             
-            {/* Vstup 1: Čas */}
+            {/* Vstup 1: Čas výuky */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
@@ -805,7 +820,7 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
               </div>
             </div>
 
-            {/* Vstup 2: Parkování a ověřená zastávka */}
+            {/* Vstup 2: Parkování a ověřená zastávka na Prahu */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
                 <Car className="w-3.5 h-3.5 text-indigo-500" />
@@ -873,216 +888,7 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
           </div>
         </div>
 
-        {/* 6. VYSUNOVACÍ NASTAVENÍ REZERV */}
-        {showSettings && (
-          <div className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-5 sm:p-7 text-xs space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white text-sm">
-                <SlidersHorizontal className="w-4 h-4 text-sky-600" />
-                Úprava časových úseků a rezerv
-              </div>
-              <button 
-                onClick={() => {
-                  setArrivalBufferMin(15);
-                  setParkingSearchBufferMin(5);
-                  setCustomBusDuration(52);
-                  setCustomMetroDuration(18);
-                  setWalkFromMetroAmbis(8);
-                }}
-                className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-medium"
-              >
-                <RefreshCw className="w-3 h-3" /> Výchozí hodnoty
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 block mb-1">Rezerva v budově Ambis:</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="5"
-                    max="60"
-                    value={arrivalBufferMin}
-                    onChange={(e) => setArrivalBufferMin(Math.max(0, Number(e.target.value)))}
-                    className="w-16 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 font-bold bg-slate-50 dark:bg-slate-800"
-                  />
-                  <span className="text-slate-500">minut před výukou</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 block mb-1">Parkování a uzamčení vozu:</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={parkingSearchBufferMin}
-                    onChange={(e) => setParkingSearchBufferMin(Math.max(1, Number(e.target.value)))}
-                    className="w-16 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 font-bold bg-slate-50 dark:bg-slate-800"
-                  />
-                  <span className="text-slate-500">minut na parkovišti</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 block mb-1">Metro B (Smíchov ↔ Palmovka):</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="14"
-                    max="30"
-                    value={customMetroDuration}
-                    onChange={(e) => setCustomMetroDuration(Math.max(10, Number(e.target.value)))}
-                    className="w-16 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 font-bold bg-slate-50 dark:bg-slate-800"
-                  />
-                  <span className="text-slate-500">minut (11 stanic)</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 block mb-1">Základní jízda bus 395/393:</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="40"
-                    max="80"
-                    value={customBusDuration}
-                    onChange={(e) => setCustomBusDuration(Math.max(30, Number(e.target.value)))}
-                    className="w-16 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 font-bold bg-slate-50 dark:bg-slate-800"
-                  />
-                  <span className="text-slate-500">minut bez zácpy</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 block mb-1">Chůze Palmovka ↔ AMBIS:</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="4"
-                    max="15"
-                    value={walkFromMetroAmbis}
-                    onChange={(e) => setWalkFromMetroAmbis(Math.max(3, Number(e.target.value)))}
-                    className="w-16 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 font-bold bg-slate-50 dark:bg-slate-800"
-                  />
-                  <span className="text-slate-500">minut chůze (~650 m)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 7. VYSUNOVACÍ INFORMACE O JÍZDENKÁCH A ZASTÁVKÁCH */}
-        {showFaq && (
-          <div className="border-b border-slate-200/80 dark:border-slate-800 bg-amber-50/60 dark:bg-amber-950/20 p-5 sm:p-7 text-xs space-y-3 animate-in fade-in">
-            <div className="flex items-center justify-between pb-1">
-              <span className="font-bold text-amber-900 dark:text-amber-200 text-sm flex items-center gap-1.5">
-                <Ticket className="w-4 h-4 text-amber-600" />
-                Ověřené zastávky PID a jízdné pro trasu Příbram ↔ AMBIS Libeň
-              </span>
-              <button
-                onClick={() => setShowFaq(false)}
-                className="text-xs text-amber-700 dark:text-amber-400 hover:underline"
-              >
-                Skrýt
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-amber-950/90 dark:text-amber-200/90">
-              <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/40">
-                <div className="font-bold mb-1 text-slate-900 dark:text-white">1. Zastávky linek 395 a 393 v Příbrami</div>
-                <p>
-                  Linka <strong>395</strong> a <strong>393</strong> na Prahu nejezdí ze všech zastávek. Jezdí z: <em>Příbram, aut. nádr.</em>, <em>Příbram, II. poliklinika</em>, <em>Příbram, Československé armády</em>, <em>Příbram, Jiráskovy sady</em>, <em>Příbram, Sevastopolské nám.</em> (pouze 395) a <em>Příbram, Březové Hory</em>.
-                </p>
-              </div>
-
-              <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/40">
-                <div className="font-bold mb-1 text-slate-900 dark:text-white">2. Zastávka u školy AMBIS (Praha 8)</div>
-                <p>
-                  Kampus AMBIS sídlí na adrese <strong>Lindnerova 575/1, Libeň</strong>. Nejbližší zastávka MHD je <strong>Praha, U Kříže</strong> (tramvaje 3, 10, 24 – jen 200 m chůze) nebo stanice <strong>Praha, Palmovka</strong> (metro B – cca 650 m / 8 min pěšky).
-                </p>
-              </div>
-
-              <div className="bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/40">
-                <div className="font-bold mb-1 text-slate-900 dark:text-white">3. Pásma PID & Jízdné</div>
-                <p>
-                  Příbram leží v <strong>pásmu 4</strong>. Pokud máte platný pražský kupon (Lítačka), stačí vám jízdenka pro <strong>4 vnější pásma PID</strong> (54 Kč / 180 min). Bez pražské Lítačky kupujete jízdenku pro 5 pásem + Prahu.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 8. MODÁLNÍ DIALOG: JAK PŘIDAT NA PLOCHU / NAINSTALOVAT */}
-        {showInstallGuide && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
-              <button
-                onClick={() => setShowInstallGuide(false)}
-                className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-sky-600 text-white shadow-md">
-                  <Smartphone className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Instalace jako Webová aplikace
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Pro rychlý přístup na mobilu, tabletu i PC
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
-                    <span>🍏 iPhone / iPad (Safari)</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400">
-                    <li>Klepněte na ikonu <strong>Sdílet</strong> (čtvereček se šipkou nahoru dole).</li>
-                    <li>Sjeďte dolů a vyberte <strong>Přidat na plochu</strong> (Add to Home Screen).</li>
-                    <li>Potvrďte klepnutím na <strong>Přidat</strong>. Aplikace se otevře v samostatném okně bez lišt prohlížeče!</li>
-                  </ol>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
-                    <span>🤖 Android telefon / tablet (Chrome)</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400">
-                    <li>Klepněte na <strong>tři tečky</strong> vpravo nahoře v prohlížeči.</li>
-                    <li>Zvolte možnost <strong>Nainstalovat aplikaci</strong> nebo <strong>Přidat na plochu</strong>.</li>
-                  </ol>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                  <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
-                    <span>💻 Počítač (Chrome / Edge / Safari)</span>
-                  </div>
-                  <p className="text-slate-500 dark:text-slate-400">
-                    V pravé části adresního řádku klepněte na ikonu <strong>Nainstalovat aplikaci</strong> (nebo Menu ➔ Nainstalovat).
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowInstallGuide(false)}
-                className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition"
-              >
-                Rozumím
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 9. ČASOVÁ OSA KROK ZA KROKEM */}
+        {/* 6. ČASOVÁ OSA KROK ZA KROKEM */}
         <div className="p-5 sm:p-7">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
@@ -1370,8 +1176,8 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
           )}
         </div>
 
-        {/* 10. SPODNÍ INFORMAČNÍ LIŠTA */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200/80 dark:border-slate-800 px-5 sm:px-7 py-3.5 text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+        {/* 7. SPODNÍ INFORMAČNÍ LIŠTA */}
+        <div className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200/80 dark:border-slate-800 px-5 sm:px-7 py-3 text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Info className="w-4 h-4 text-sky-500 flex-shrink-0" />
             <span>
@@ -1384,6 +1190,463 @@ Celková doba návratu: ${Math.floor(returnSchedule.totalReturnTripMin / 60)}h $
         </div>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* VYSKAKOVACÍ MODÁLNÍ OKNA (POPUP MODALS) – OTEVÍRAJÍ SE CENTROVANĚ NA OBRAZOVCE */}
+      {/* ========================================================================= */}
+
+      {/* MODAL 1: REZERVY A ČASOVÉ ÚSEKY */}
+      {showSettingsModal && (
+        <div 
+          onClick={() => setShowSettingsModal(false)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-4"
+          >
+            
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-300">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    Nastavení časových rezerv
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Přizpůsobte si minuty jednotlivých úseků cesty
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              
+              {/* Položka 1: Rezerva ve škole */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white text-xs">
+                    Rezerva v budově AMBIS před začátkem
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Čas na šatnu, toaletu a nalezení učebny
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => setArrivalBufferMin(Math.max(5, arrivalBufferMin - 5))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-12 text-center font-bold text-sm text-slate-900 dark:text-white">
+                    {arrivalBufferMin} m
+                  </span>
+                  <button
+                    onClick={() => setArrivalBufferMin(Math.min(60, arrivalBufferMin + 5))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Položka 2: Parkování v Příbrami */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white text-xs">
+                    Parkování a uzamčení vozu
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Doba na nalezení místa a dojít k autu
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => setParkingSearchBufferMin(Math.max(1, parkingSearchBufferMin - 1))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-12 text-center font-bold text-sm text-slate-900 dark:text-white">
+                    {parkingSearchBufferMin} m
+                  </span>
+                  <button
+                    onClick={() => setParkingSearchBufferMin(Math.min(20, parkingSearchBufferMin + 1))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Položka 3: Metro B */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white text-xs">
+                    Metro B (Smíchov ↔ Palmovka)
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Jízda podzemím (11 stanic)
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => setCustomMetroDuration(Math.max(12, customMetroDuration - 1))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-12 text-center font-bold text-sm text-slate-900 dark:text-white">
+                    {customMetroDuration} m
+                  </span>
+                  <button
+                    onClick={() => setCustomMetroDuration(Math.min(30, customMetroDuration + 1))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Položka 4: Autobus 395/393 */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white text-xs">
+                    Základní jízda bus 395/393
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Doba jízdy po D4 bez zácpy
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => setCustomBusDuration(Math.max(35, customBusDuration - 2))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-12 text-center font-bold text-sm text-slate-900 dark:text-white">
+                    {customBusDuration} m
+                  </span>
+                  <button
+                    onClick={() => setCustomBusDuration(Math.min(80, customBusDuration + 2))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Položka 5: Chůze Palmovka ↔ AMBIS */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-white text-xs">
+                    Chůze Palmovka ↔ AMBIS
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Cca 650 metrů ulicí Lindnerova
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={() => setWalkFromMetroAmbis(Math.max(3, walkFromMetroAmbis - 1))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-12 text-center font-bold text-sm text-slate-900 dark:text-white">
+                    {walkFromMetroAmbis} m
+                  </span>
+                  <button
+                    onClick={() => setWalkFromMetroAmbis(Math.min(18, walkFromMetroAmbis + 1))}
+                    className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="pt-2 flex items-center justify-between gap-3">
+              <button 
+                onClick={() => {
+                  setArrivalBufferMin(15);
+                  setParkingSearchBufferMin(5);
+                  setCustomBusDuration(52);
+                  setCustomMetroDuration(18);
+                  setWalkFromMetroAmbis(8);
+                }}
+                className="text-xs text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-medium"
+              >
+                <RefreshCw className="w-3 h-3" /> Obnovit výchozí
+              </button>
+
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition active:scale-95 shadow-sm"
+              >
+                Uložit a zavřít
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: JÍZDENKY PID A OVĚŘENÉ ZASTÁVKY */}
+      {showFaqModal && (
+        <div 
+          onClick={() => setShowFaqModal(false)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-4"
+          >
+            
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                  <Ticket className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    Jízdné PID a ověřené zastávky
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Trasa Příbram ↔ Praha AMBIS (Libeň)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowFaqModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+              
+              <div className="bg-amber-50/70 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 space-y-1.5">
+                <div className="font-bold text-amber-950 dark:text-amber-200 text-sm flex items-center gap-2">
+                  <span>1. Pásma PID a kolik stojí jízdenka</span>
+                </div>
+                <p className="leading-relaxed">
+                  Příbram leží ve vnějším <strong>pásmu 4</strong>. Praha tvoří pásma P, 0, B.
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-700 dark:text-slate-300 pl-1">
+                  <li><strong>Máte pražskou Lítačku (kupón pro Prahu):</strong> Stačí vám dokoupit jízdenku pouze pro <strong>4 vnější pásma</strong> (54 Kč / 180 min).</li>
+                  <li><strong>Nemáte pražský kupón:</strong> Potřebujete jízdenku pro <strong>5 vnějších pásem + Prahu</strong> (90 Kč / 240 min).</li>
+                  <li>Jízdenku snadno koupíte a aktivujete v aplikaci <em>PID Lítačka</em> na telefonu.</li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-1.5">
+                <div className="font-bold text-slate-900 dark:text-white text-sm">
+                  2. Kde v Příbrami staví přímé autobusy na Prahu?
+                </div>
+                <p className="leading-relaxed text-slate-600 dark:text-slate-400">
+                  Přímé autobusy <strong>PID 395 a 393</strong> na Prahu nestaví na všech zastávkách! Staví pouze na:
+                </p>
+                <div className="grid grid-cols-2 gap-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300 pt-1">
+                  <div>• Příbram, aut. nádr.</div>
+                  <div>• Příbram, II. poliklinika</div>
+                  <div>• Příbram, Československé armády</div>
+                  <div>• Příbram, Jiráskovy sady</div>
+                  <div>• Příbram, Sevastopolské nám.</div>
+                  <div>• Příbram, Březové Hory</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-1.5">
+                <div className="font-bold text-slate-900 dark:text-white text-sm">
+                  3. Zastávky přímo u školy AMBIS (Praha 8 – Libeň)
+                </div>
+                <p className="leading-relaxed text-slate-600 dark:text-slate-400">
+                  Kampus AMBIS sídlí na adrese <strong>Lindnerova 575/1, Libeň</strong>:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-700 dark:text-slate-300 pl-1">
+                  <li><strong>Praha, U Kříže:</strong> Nejbližší zastávka tramvají 3, 10, 24 – jen <strong>200 metrů (3 min pěšky)</strong> od školy!</li>
+                  <li><strong>Praha, Palmovka:</strong> Přestupní stanice metra linky B – cca <strong>650 metrů (8 min chůze)</strong> nebo 1 stanice tramvají na U Kříže.</li>
+                </ul>
+              </div>
+
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setShowFaqModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition active:scale-95 shadow-sm"
+              >
+                Rozumím, zavřít
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: KOPÍROVAT A SDÍLET PLÁN */}
+      {showShareModal && (
+        <div 
+          onClick={() => setShowShareModal(false)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-4"
+          >
+            
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300">
+                  <Copy className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    Plán cesty do schránky
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Zkopírujte nebo odešlete přes zprávy
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="bg-slate-50 dark:bg-slate-800/80 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 font-mono text-[11px] leading-relaxed whitespace-pre-wrap select-all text-slate-800 dark:text-slate-200">
+                {planSummaryText}
+              </div>
+
+              {copiedSchedule && (
+                <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Úspěšně zkopírováno do schránky!</span>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 grid grid-cols-2 gap-2">
+              <button
+                onClick={copyToClipboard}
+                className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-sm"
+              >
+                {copiedSchedule ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedSchedule ? 'Zkopírováno' : 'Kopírovat text'}</span>
+              </button>
+
+              <button
+                onClick={handleShareMobile}
+                className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 border border-slate-300 dark:border-slate-700"
+              >
+                <Share2 className="w-4 h-4 text-sky-600" />
+                <span>Sdílet (Mobil)</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: INSTALACE APLIKACE NA PLOCHU (PWA) */}
+      {showInstallModal && (
+        <div 
+          onClick={() => setShowInstallModal(false)}
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-4"
+          >
+            
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-sky-600 text-white shadow-md">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    Přidat aplikaci na plochu
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Pro bleskové spouštění z plochy mobilu i PC
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowInstallModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+              
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1.5">
+                  <span>🍏 iPhone a iPad (Safari)</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400">
+                  <li>V Safari klepněte dole na ikonu <strong>Sdílet</strong> (čtvereček se šipkou nahoru).</li>
+                  <li>V menu sjeďte níže a zvolte <strong>Přidat na plochu</strong> (Add to Home Screen).</li>
+                  <li>Potvrďte klepnutím na <strong>Přidat</strong>. Aplikace se bude otevírat v celoobrazovkovém okně!</li>
+                </ol>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1.5">
+                  <span>🤖 Android telefon a tablet (Chrome)</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-slate-500 dark:text-slate-400">
+                  <li>V prohlížeči Chrome klepněte na <strong>tři tečky</strong> vpravo nahoře.</li>
+                  <li>Klepněte na <strong>Nainstalovat aplikaci</strong> nebo <strong>Přidat na plochu</strong>.</li>
+                </ol>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700">
+                <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
+                  <span>💻 Počítač (Chrome / Edge / Safari)</span>
+                </div>
+                <p className="text-slate-500 dark:text-slate-400">
+                  V pravé části adresního řádku klepněte na ikonu <strong>Nainstalovat</strong>.
+                </p>
+              </div>
+
+            </div>
+
+            <button
+              onClick={() => setShowInstallModal(false)}
+              className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition active:scale-95 shadow-sm"
+            >
+              Rozumím, zavřít
+            </button>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
